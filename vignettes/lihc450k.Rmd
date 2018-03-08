@@ -1,0 +1,31 @@
+---
+title: "lihc450k -- illustrate remote HDF5 representation of 450k methylation data for TCGA LIHC samples"
+author: "Vincent J. Carey, stvjc at channing.harvard.edu"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{ihc450k -- illustrate remote HDF5 representation of 450k methylation data for TCGA LIHC samples}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    highlight: pygments
+    number_sections: yes
+    theme: united
+    toc: yes
+---
+
+```{r setup,echo=FALSE,results="hide"}
+suppressPackageStartupMessages({
+suppressMessages({
+library(lihc450k)
+})
+})
+```
+
+# Introduction
+
+The Illumina 450k methylation data for TCGA cohorts
+are challenging to serialize and load.  This vignette illustrates
+use of remote HDF5 in the HSDS (HDF Object Store) paradigm.
+
+Use example(loadLIHC450k) to see how it works.  

@@ -1,0 +1,14 @@
+Package: lihc450k
+Title: A SummarizedExperiment instance with 450k methylation data on TCGA LIHC
+Description: Provide a SummarizedExperiment instance with 450k methylation data on TCGA LIHC
+Version: 0.99.0
+Author: Vince Carey
+Suggests: knitr
+Depends: SummarizedExperiment, BiocFileCache
+Imports: restfulSE
+Maintainer: VJ Carey <stvjc@channing.harvard.edu>
+License: Artistic-2.0
+LazyLoad: yes
+biocViews: transcriptomics, cancer
+VignetteBuilder: knitr
+RoxygenNote: 6.0.1.9000
