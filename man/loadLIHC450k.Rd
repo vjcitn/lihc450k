@@ -7,16 +7,22 @@
 
   loadLIHC450k(remoteSEPath = "https://s3.amazonaws.com/biocfound-tcga/lihc450k.rds",
   remoteHSDSPath = "http://52.4.181.237:5101",
-  hostPath = "/home/stvjc/lihc450k.h5", cache = BiocFileCache())
+  HDF5_in_S3_Path = "https://s3.amazonaws.com/biocfound-tcga/lihc450k_imp.h5",
+  hostPath = "/home/stvjc/lihc450k.h5", cache = BiocFileCache(),
+  useHSDS = TRUE)
 }
 \arguments{
 \item{remoteSEPath}{character(1) identifying remote RDS with assay-free SummarizedExperiment instance}
 
 \item{remoteHSDSPath}{character(1) identifying HSDS server/port}
 
+\item{HDF5_in_S3_Path}{character(1) identifying file in S3 bucket with 1.2GB of HDF5 to be downloaded and cached for local use}
+
 \item{hostPath}{character(1) the data 'host' -- looks strange with '/home' default but it is OK}
 
 \item{cache}{defaults to BiocFileCache() value}
+
+\item{useHSDS}{logical indicating, if TRUE, that 450k numerical data to be retrieved from HSDS; if FALSE, 1.2 GB of HDF5 will be retrieved from S3 and locally cached for future use}
 }
 \description{
 use BiocFileCache discipline to acquire lihc450K SummarizedExperiment
@@ -24,12 +30,14 @@ use BiocFileCache discipline to acquire lihc450K SummarizedExperiment
 \note{
 The RDS for the SummarizedExperiment is in an AWS S3 bucket.
 This function will check local cache for the data and will download
-to cache if not found.  That download is a one-time operation for
+to cache (this is a default behavior of bfcrpath())
+if not found.  That download is a one-time operation for
 any given value of \code{cache}.  Note further that the `remoteHSDSPath`
 is provided courtesy of the HDF Group in early 2018 and may not be persistent.
 }
 \examples{
 lim = loadLIHC450k()
+lim
 assay(lim)
 assay(lim)[1,429]
 # 'confirm' with restfulSE interface to ISB-CGC
