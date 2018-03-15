@@ -1,7 +1,7 @@
 Package: lihc450k
 Title: A SummarizedExperiment instance with 450k methylation data on TCGA LIHC
 Description: Provide a SummarizedExperiment instance with 450k methylation data on TCGA LIHC
-Version: 0.99.2
+Version: 0.99.3
 Author: Vince Carey
 Suggests: knitr
 Depends: SummarizedExperiment, BiocFileCache
