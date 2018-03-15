@@ -114,7 +114,7 @@ lihcTM
 
 The location of the 450k data can be seen as follows:
 ```{r lkloc}
-assay(lihcTM, "lihc450k")@seed@filepath
+path(assay(lihcTM, "lihc450k"))
 ```
 
 # Annotating and linking the features for methylation-expression association testing
