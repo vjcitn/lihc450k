@@ -1,0 +1,211 @@
+---
+title: "lihc450k -- illustrating hybrid memory models for MultiAssayExperiments derived from curatedTCGAData"
+author: "Vincent J. Carey, stvjc at channing.harvard.edu"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{lihc450k, mixing out-of- and in-memory representations in MAE}
+  %\VignetteEncoding{UTF-8}
+output:
+  BiocStyle::html_document:
+    highlight: pygments
+    number_sections: yes
+    theme: united
+    toc: yes
+---
+
+```{r setup,echo=FALSE,results="hide"}
+suppressPackageStartupMessages({
+suppressMessages({
+library(restfulSE)
+library(rhdf5client)
+library(lihc450k)
+library(curatedTCGAData)
+library(EnsDb.Hsapiens.v75) # GRCh37
+library(FDb.InfiniumMethylation.hg19)
+library(GenomeInfoDb)
+library(MethylMix)
+})
+})
+```
+
+# Introduction
+
+The `r Biocpkg("curatedTCGAData")` package delivers instances of the `MultiAssayExperiment`
+class, as defined in the `r Biocpkg("MultiAssayExperiment")` package.  When the
+set of assays requested includes the DNA methylation data as assayed by the
+Illumina 450K array, the standard serialization can be difficult to work with.
+For the TCGA LIHC data, the serialized, compressed RDA approaches 1GB on disk.
+
+It is natural to consider out-of-memory approaches to working with such data, but
+the practical implications of this are not completely clear.  The `lihc450k` package
+is experimental, with development at `github.com/vjcitn/lihc450k`, making reference
+to serializations of metadata and assay data that are lodged in public AWS S3 buckets,
+and in a public instance of the HDF Object Store (known as HSDS) in a server
+provided by John Readey of the HDF Group.  
+
+In this document we will illustrate how `lihc450k` can be used to explore the
+implications of hybrid approaches to representation of genome-scale assays.  We use
+`r Biocpkg("BiocFileCache")` to manage persistent images of SummarizedExperiment
+metadata and "local" HDF5.  Ultimately we will illustrate how to use a hybrid
+MultiAssayExperiment to carry out tasks of identifying transcriptionally predictive
+DNA methylation states in the `r Biocpkg("MethylMix")` package.
+
+_Nota bene:_ The first time you run `lim = loadLIHC450k(useHSDS=FALSE)`,
+a 1.2 GB HDF5 representation of the 450k data will be downloaded to
+your BiocFileCache.  This can take a while depending on network
+througput. Once this task has completed successfully, this
+function will run quickly.  (To avoid the download, set `useHSDS` to
+`TRUE`, in which case queries for 450k data will use the remote HSDS.)
+
+# Building the hybrid MultiAssayExperiment instance
+
+## An image of the 450k data
+
+We will use the `loadLIHC450k` function to create a SummarizedExperiment
+instance for the 450k data from the TCGA-LIHC (liver, hepatocellular carcinoma)
+cohort.  By specifying `useHSDS=FALSE`, we indicate that we want to use
+local HDF5 to manage the 450k data.  This entails that `BiocFileCache` will
+be populated with the HDF5 representation of `396065 x 421` methylation
+quantifications (beta values).  Note that the quantifications were retrieved
+using the download utility of `MethylMix` and that missing values are present
+in the data as delivered by Broad Firehose.  In preparing the HDF5, 
+features for which no sample
+provided a quantification were manually removed, and sporadically missing
+values were replaced by values obtained by the `impute.knn` function of the
+`r CRANpkg("impute")` package.
+
+```{r dohyb}
+library(lihc450k)
+lim = loadLIHC450k(useHSDS=FALSE) # local
+```
+
+## Combining the 450k with the `RNASeq2GeneNorm` expression data
+
+We want to work with matched expression and methylation data.
+The `MultiAssayExperiment` function uses a `sampleMap` DataFrame
+to link the samples.
+
+```{r setupmap}
+lim_map = DataFrame(assay=factor(rep("lihc450k", ncol(lim))), 
+  primary=substr(colnames(lim),1,12), colname=colnames(lim))
+```
+
+We acquire the expression data.  This will use the BiocFileCache if this
+is not the first time requesting these data, or will download to 
+populate the cache if it is the first time requesting the data.
+```{r getex}
+suppressMessages({
+library(curatedTCGAData)
+lihcrna = curatedTCGAData("LIHC", "RNASeq2GeneNorm", dry.run=FALSE)
+})
+```
+
+We finish building the `sampleMap` and construct the MultiAssayExperiment.
+```{r fini, cache=TRUE}
+lrna = experiments(lihcrna)[[1]]
+sm = sampleMap(lihcrna)
+sm$assay = factor(rep("lihcrnaseq", nrow(sm)))
+sm2 = rbind(sm, lim_map)
+el = ExperimentList(lihcrnaseq=lrna, lihc450k=lim)
+lihcTM = MultiAssayExperiment(el, sampleMap=sm2, colData=colData(lihcrna))
+lihcTM
+```
+
+The location of the 450k data can be seen as follows:
+```{r lkloc}
+assay(lihcTM, "lihc450k")@seed@filepath
+```
+
+# Annotating and linking the features for methylation-expression association testing
+
+## Annotation to identify CpG addresses
+
+```{r getmanno, cache=TRUE}
+library(FDb.InfiniumMethylation.hg19)
+hm450.hg19 <- getPlatform(platform='HM450', genome='hg19')
+metn = rownames(lihcTM)[[2]]
+metloc = hm450.hg19[metn]
+metloc[1]
+```
+
+## Annotation to identify gene regions
+
+```{r geteanno, cache=TRUE}
+library(EnsDb.Hsapiens.v75)
+g37 = genes(EnsDb.Hsapiens.v75)
+g37[1]
+```
+
+We will use GRCh37 as the genome tag, and
+adopt the NCBI convention for chromosome
+enumeration.
+
+```{r resetg}
+genome(metloc) = "GRCh37"
+library(GenomeInfoDb)
+seqlevelsStyle(metloc) = "NCBI"
+```
+
+## Enumerating CpGs in 'promoter' regions
+
+We'll use the default definition of promoters
+in conjunction with the gene addresses, and
+find CpGs in these regions.
+
+```{r lkp}
+pg37 = promoters(g37)
+cfilt = findOverlaps(metloc, pg37)
+memap = metloc[queryHits(cfilt)]
+memap$sym.prom = g37$symbol[subjectHits(cfilt)]
+memap[1:3]
+```
+
+# A small illustration of MethylMix
+
+As currently coded, MethylMix requires matrix inputs.  We
+can derive the necessary inputs from the hybrid MultiAssayExperiment,
+using the annotation developed above.  (With a small number
+of modifications that relax class checks in MethylMix, 
+MethyMix can work directly from the out-of-memory
+representation, but we defer this for now.)
+
+```{r trymm}
+demoN = 500 # this is an overstatement of the number of CpG to be used
+#   we will need to filter the CpG isolated into 'promoter' regions
+#   above to match genes for which RNA-seq data are available
+nmet = experiments(lihcTM)[["lihc450k"]][seq_len(demoN),] # convenience subset
+rna = experiments(lihcTM)[["lihcrnaseq"]]                 # all RNA-seq
+## delete
+memap = metloc[queryHits(cfilt)]
+memap$sym.prom = g37$symbol[subjectHits(cfilt)]
+##
+memap = memap[intersect(names(memap), names(nmet))]       # find the CpG-gene map
+nmet = nmet[names(memap)]                           # limit the CpG to those mapped
+rownames(nmet) = memap[rownames(nmet)]$sym.prom     # rename the delayed rows
+oksym = intersect(rownames(nmet), rownames(rna))   # determine CpGs that correspond
+```
+Conversion of data to matrix form and separation of
+tumor and normal samples follows:
+```{r doconv}
+colnames(rna) = substr(colnames(rna),1,15)
+colnames(nmet) = substr(colnames(nmet),1,15)
+frna = assay(rna[oksym,])
+etype = substr(colnames(frna),14,15)
+frna = frna[, which(etype=="01")]
+colnames(frna) = substr(colnames(frna),1,12)
+fmet = as(assay(nmet[oksym,]), "matrix")
+type = substr(colnames(nmet), 14, 15)
+tummet = fmet[, which(type=="01")]
+colnames(tummet) = substr(colnames(tummet),1,12)
+normmet = fmet[, which(type=="11")]
+colnames(normmet) = substr(colnames(normmet),1,12)
+```
+
+```{r domm,cache=TRUE}
+m1 = MethylMix(METcancer=tummet, GEcancer=frna, METnormal=normmet)
+pm = MethylMix_PlotModel("CCNJ", m1, tummet, frna, normmet)
+print(pm[[1]])
+print(pm[[2]])
+```
+
