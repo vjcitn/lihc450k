@@ -28,4 +28,21 @@ The Illumina 450k methylation data for TCGA cohorts
 are challenging to serialize and load.  This vignette illustrates
 use of remote HDF5 in the HSDS (HDF Object Store) paradigm.
 
-Use example(loadLIHC450k) to see how it works.  
+Briefly, use example(loadLIHC450k) to see how it works.  For
+this example
+
+- a low-content SummarizedExperiment is retrieved from AWS S3 and lodged
+in a BiocFileCache
+- a connection is made to a public HDF Object Store
+(HSDS instance) 
+- `assay(lim)` evaluates to a DelayedArray
+wrapping the numerical data in the store.  
+
+On the other hand
+```
+lim2 = loadLIHC450k(useHSDS=FALSE)
+```
+replaces the step of connecting to HDF Object Store with a retrieval of
+1.2GB of HDF5, and lodges this in a BiocFileCache.  `assay(lim2)` then
+evaluates to the DelayedArray wrapping the local HDF5 array.
+
